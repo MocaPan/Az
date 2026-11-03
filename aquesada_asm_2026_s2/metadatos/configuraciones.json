@@ -1,0 +1,40 @@
+{
+  "fs_hz": 16000,
+  "tamano_bloque": 1024,
+  "duracion_s": 6.0,
+  "frecuencias_utiles_hz": [
+    500,
+    900,
+    1300
+  ],
+  "amplitudes_utiles": [
+    1.0,
+    0.7,
+    0.5
+  ],
+  "fases_grados": [
+    0.0,
+    30.0,
+    -45.0
+  ],
+  "snr_objetivo_db": 5.0,
+  "casos": {
+    "caso_1": {
+      "semilla": 101,
+      "tipo_ruido": "tonal",
+      "frecuencia_interferencia_hz": 1800
+    },
+    "caso_2": {
+      "semilla": 202,
+      "tipo_ruido": "blanco"
+    },
+    "caso_3": {
+      "semilla": 303,
+      "tipo_ruido": "banda",
+      "banda_ruido_hz": [
+        800,
+        1500
+      ]
+    }
+  }
+}

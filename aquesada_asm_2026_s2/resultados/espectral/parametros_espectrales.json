@@ -1,0 +1,40 @@
+{
+  "fs_hz": 16000,
+  "N": 1024,
+  "solapamiento": 0.5,
+  "reduccion_base": 1.0,
+  "casos": [
+    {
+      "caso": 1,
+      "reduccion": 1.0,
+      "frecuencias_picos_hz": [
+        1796.875
+      ],
+      "N": 1024,
+      "salto": 512,
+      "solapamiento": 0.5,
+      "ganancia_minima": 0.07673743382817838,
+      "error_imaginario_esperado": 0.0
+    },
+    {
+      "caso": 2,
+      "reduccion": 1.0,
+      "frecuencias_picos_hz": [],
+      "N": 1024,
+      "salto": 512,
+      "solapamiento": 0.5,
+      "ganancia_minima": 0.08,
+      "error_imaginario_esperado": 0.0
+    },
+    {
+      "caso": 3,
+      "reduccion": 1.0,
+      "frecuencias_picos_hz": [],
+      "N": 1024,
+      "salto": 512,
+      "solapamiento": 0.5,
+      "ganancia_minima": 0.08,
+      "error_imaginario_esperado": 0.0
+    }
+  ]
+}
