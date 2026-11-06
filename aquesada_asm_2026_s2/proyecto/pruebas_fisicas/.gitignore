@@ -1,0 +1,14 @@
+﻿# Archivos temporales de Python
+__pycache__/
+*.py[cod]
+
+# Senales de audio generadas
+senales_originales/
+senales/
+
+# Capturas y resultados experimentales locales
+capturas/
+resultados/
+
+# Material exploratorio
+modelo_oficial/

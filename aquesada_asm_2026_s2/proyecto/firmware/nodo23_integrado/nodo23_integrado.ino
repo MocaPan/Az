@@ -15,7 +15,7 @@ const uint32_t BAUD_UART = 460800;
 // Salida física
 const int PIN_PWM = 4;
 
-const uint32_t FRECUENCIA_PWM = 62500;
+const uint32_t FRECUENCIA_PWM = 125000;
 const uint8_t RESOLUCION_PWM = 8;
 
 // Procesamiento
@@ -160,6 +160,26 @@ float z2[NUM_SOS] = {0};
 
 float entradaTemporal[N];
 float salidaTemporal[N];
+float senalLimpia[N];
+
+
+ // =====================================================
+ // DIAGNOSTICO EXPERIMENTAL - PERSONA 2
+ // =====================================================
+
+// Captura de un bloque completo para analisis FFT.
+constexpr int N_DIAG = N;
+
+float diagEntrada[N_DIAG];
+float diagIIR[N_DIAG];
+float diagEspectral[N_DIAG];
+
+bool diagSolicitado = false;
+bool diagDisponible = false;
+
+int diagIndice = 0;
+uint32_t diagNumeroBloque = 0;
+
 
 
 // =====================================================
@@ -168,11 +188,11 @@ float salidaTemporal[N];
 // =====================================================
 // =====================================================
 
-const float REDUCCION = 1.0f;
-const float GANANCIA_MIN = 0.08f;
+float REDUCCION = 1.0f;
+const float GANANCIA_MIN = 0.15f;
 
 const float PASO_BANDA_HZ = 1450.0f;
-const float UMBRAL_PICO = 7.0f;
+float UMBRAL_PICO = 7.0f;
 
 
 // Buffers FFT
@@ -196,6 +216,7 @@ float mitadAnterior[HOP] = {0};
 float colaOLA[HOP] = {0};
 
 float salidaEspectral[N];
+float gananciaAnterior[N / 2 + 1] = {0};
 
 
 // Buffers auxiliares globales.
@@ -724,43 +745,26 @@ void procesarTrama(
     }
 
 
-    if (
-      bandaElegible
-      && suficientementeGrande
-      && picoLocal
-      && razon >= UMBRAL_PICO
-    ) {
+  if (bandaElegible && suficientementeGrande && picoLocal && razon >= UMBRAL_PICO) {
+        gain *= 1.0f / (1.0f + 8.0f * REDUCCION);
+      }
 
-      gain *=
-        1.0f
-        / (
-            1.0f
-            + 8.0f
-            * REDUCCION
-          );
+      // --- NUEVO: SUAVIZADO TEMPORAL DE GANANCIA ---
+      // Promedia la ganancia actual con la del bloque anterior (60% nueva, 40% vieja)
+      float gainSuavizada = 0.6f * gain + 0.4f * gananciaAnterior[k];
+      gananciaAnterior[k] = gainSuavizada;
+
+      // Aplicar ganancia suavizada
+      vReal[k] *= gainSuavizada;
+      vImag[k] *= gainSuavizada;
+
+      // Preservar simetría conjugada
+      if (k > 0 && k < N / 2) {
+        int espejo = N - k;
+        vReal[espejo] *= gainSuavizada;
+        vImag[espejo] *= gainSuavizada;
+      }
     }
-
-
-    // Aplicar ganancia
-
-    vReal[k] *= gain;
-    vImag[k] *= gain;
-
-
-    // Preservar simetría conjugada
-
-    if (
-      k > 0
-      && k < N / 2
-    ) {
-
-      int espejo =
-        N - k;
-
-      vReal[espejo] *= gain;
-      vImag[espejo] *= gain;
-    }
-  }
 
 
   // -----------------------------------------
@@ -894,6 +898,72 @@ float calcularRMS(
     sqrt(
       energia / N
     );
+}
+
+
+// =====================================================
+// NORMALIZACIÓN Y MÉTRICAS ACÚSTICAS
+// =====================================================
+
+void calcularMetricasAcusticas(const float* original, const float* filtrada, float& mseOut, float& snrOut) {
+  // 1. Calcular RMS para igualar amplitudes
+  double energiaOrig = 0, energiaFilt = 0;
+  for(int i = 0; i < N; i++) {
+    energiaOrig += (double)original[i] * original[i];
+    energiaFilt += (double)filtrada[i] * filtrada[i];
+  }
+  float rmsOrig = sqrt(energiaOrig / N);
+  float rmsFilt = sqrt(energiaFilt / N);
+
+  // Factor para escalar la señal ideal (bajarle el volumen al nivel del micro)
+  float factorAmplitud = (rmsOrig > 0.1f) ? (rmsFilt / rmsOrig) : 1.0f;
+
+  // 2. Alinear fase (Cross-Correlation de hasta 16 muestras)
+  int mejorDesfase = 0;
+  double menorRuido = 1e12; // Número infinito inicial
+
+  for (int d = 0; d < 16; d++) {
+    double ruidoPrueba = 0;
+    for (int i = 0; i < N - d; i++) {
+      double valIdeal = original[i + d] * factorAmplitud;
+      double error = valIdeal - (double)filtrada[i];
+      ruidoPrueba += (error * error);
+    }
+    if (ruidoPrueba < menorRuido) {
+      menorRuido = ruidoPrueba;
+      mejorDesfase = d;
+    }
+  }
+
+  // 3. Calcular métricas finales (MSE y SNR) con el mejor acople
+  double pot_senal = 0.0;
+  double pot_ruido = 0.0;
+  int muestrasValidas = N - mejorDesfase;
+
+  for (int i = 0; i < muestrasValidas; i++) {
+    double valIdeal = original[i + mejorDesfase] * factorAmplitud;
+    pot_senal += (valIdeal * valIdeal);
+
+    double errorReal = valIdeal - (double)filtrada[i];
+    pot_ruido += (errorReal * errorReal);
+  }
+
+  mseOut = (float)(pot_ruido / muestrasValidas);
+
+  if (pot_ruido <= 0.000001) {
+    snrOut = 100.0f;
+  } else {
+    snrOut = 10.0f * log10f((float)(pot_senal / pot_ruido));
+  }
+}
+
+// (La función calcularEnergia sigue igual)
+float calcularEnergia(const float* senal) {
+  double energia = 0.0;
+  for (int i = 0; i < N; i++) {
+    energia += (double)senal[i] * senal[i];
+  }
+  return (float)energia;
 }
 
 
@@ -1193,47 +1263,135 @@ void tareaAudio(
 // LEER COMANDOS DEL SERIAL MONITOR
 // =====================================================
 
-void revisarComandos() {
+void capturarDiagnostico(uint32_t numeroBloque) {
+  if (!diagSolicitado || diagDisponible) {
+    return;
+  }
 
-  while (
-    Serial.available()
-  ) {
+  // Copiar un bloque completo de 1024 muestras ya procesadas.
+  for (int i = 0; i < N_DIAG; i++) {
+    diagEntrada[i] = entradaTemporal[i];
+    diagIIR[i] = salidaTemporal[i];
+    diagEspectral[i] = salidaEspectral[i];
+  }
 
-    char comando =
-      Serial.read();
-
-
-    if (
-      comando == 'T'
-      || comando == 't'
-    ) {
-
-      modoSalida = 'T';
-
-      Serial.println();
-      Serial.println(
-        ">>> SALIDA TEMPORAL IIR"
-      );
-      Serial.println();
-    }
+  diagNumeroBloque = numeroBloque;
+  diagIndice = -1;
+  diagSolicitado = false;
+  diagDisponible = true;
+}
 
 
-    if (
-      comando == 'E'
-      || comando == 'e'
-    ) {
+void enviarDiagnosticoPaso() {
+  if (!diagDisponible) {
+    return;
+  }
 
-      modoSalida = 'E';
+  char linea[128];
+  int longitud = 0;
 
-      Serial.println();
-      Serial.println(
-        ">>> SALIDA ESPECTRAL FFT/IFFT"
-      );
-      Serial.println();
-    }
+  if (diagIndice == -1) {
+    longitud = snprintf(
+      linea, sizeof(linea),
+      "DIAG_BEGIN,bloque=%lu,muestras=%d\n"
+      "indice,entrada,iir,espectral\n",
+      (unsigned long)diagNumeroBloque,
+      N_DIAG
+    );
+  }
+  else if (diagIndice < N_DIAG) {
+    longitud = snprintf(
+      linea, sizeof(linea),
+      "%d,%.4f,%.4f,%.4f\n",
+      diagIndice,
+      diagEntrada[diagIndice],
+      diagIIR[diagIndice],
+      diagEspectral[diagIndice]
+    );
+  }
+  else {
+    longitud = snprintf(
+      linea, sizeof(linea),
+      "DIAG_END,bloque=%lu\n",
+      (unsigned long)diagNumeroBloque
+    );
+  }
+
+  if (longitud <= 0 || longitud >= (int)sizeof(linea)) {
+    return;
+  }
+
+  // Evitar bloquear si el buffer USB serial esta lleno.
+  if (Serial.availableForWrite() < longitud) {
+    return;
+  }
+
+  Serial.write(
+    (const uint8_t*)linea,
+    longitud
+  );
+
+  diagIndice++;
+
+  if (diagIndice > N_DIAG) {
+    diagDisponible = false;
+    diagIndice = 0;
   }
 }
 
+void revisarComandos() {
+  if (Serial.available()) {
+    String entrada = Serial.readStringUntil('\n'); //LEE LA VARA HASTA QUE UNO LE DE ENTER
+    entrada.trim(); // Elimina espacios en blanco al inicio o final
+
+    if (entrada.length() == 0) return;
+
+    char comando = entrada.charAt(0); //Agarra la primera letra del comando
+    comando = toupper(comando); // lo pasa todo a mayusculas
+
+    if (comando == 'T') {
+      modoSalida = 'T';
+      Serial.println("\n>>> SALIDA TEMPORAL IIR\n");
+    }
+    else if (comando == 'E') {
+      modoSalida = 'E';
+      Serial.println("\n>>> SALIDA ESPECTRAL FFT/IFFT\n");
+    }
+    else if (comando == 'U') {
+      float nuevoUmbral = entrada.substring(1).toFloat(); //Modifica el umbral y agarra el número acompañado de la U (ejmplo: U15.5)
+      if (nuevoUmbral > 0) {
+        UMBRAL_PICO = nuevoUmbral;
+        Serial.print("\nNuevo Umbral Pico: ");
+        Serial.println(UMBRAL_PICO);
+      }
+    }
+    else if (comando == 'R') {
+      float nuevaReduccion = entrada.substring(1).toFloat(); //Modifica la reducción y agarra el número acompañado de la R (ejmplo: R0.8)
+      if (nuevaReduccion >= 0) {
+        REDUCCION = nuevaReduccion;
+        Serial.print("\nNuevo Nivel Reduccion: ");
+        Serial.println(REDUCCION);
+      }
+    }
+    else if (comando == 'C') {   //Esta vara imprime como va en tipo resumen, sobretodo para la prueba desconocida P6
+      Serial.println("\n=== CONFIGURACION ACTUAL ===");
+      Serial.print("Filtro Activo: ");
+      Serial.println(modoSalida == 'T' ? "Temporal (IIR)" : "Espectral (FFT)");
+      Serial.print("Reduccion Espectral (R): "); Serial.println(REDUCCION);
+      Serial.print("Umbral Pico (U): "); Serial.println(UMBRAL_PICO);
+      Serial.println("============================\n");
+    }
+
+     else if (comando == 'D') {
+       if (diagSolicitado || diagDisponible) {
+         Serial.println("Diagnostico ocupado");
+       } else {
+         diagSolicitado = true;
+         Serial.println("Captura solicitada");
+       }
+    }
+  }
+}
 
 // =====================================================
 // MOSTRAR COMPARACIÓN
@@ -1311,6 +1469,50 @@ void mostrarResultados(
     rmsESP,
     1
   );
+
+ // =========================================
+  // MÉTRICAS OBLIGATORIAS (ACÚSTICAS)
+  // =========================================
+
+  const float* salidaActiva;
+  if (modoSalida == 'T') {
+    salidaActiva = salidaTemporal;
+  } else {
+    salidaActiva = salidaEspectral;
+  }
+
+  float energiaIn = calcularEnergia(entradaTemporal);
+  float energiaOut = calcularEnergia(salidaActiva);
+  float porcentajeEnergia = 0.0f;
+  if (energiaIn > 0.001f) {
+    porcentajeEnergia = (energiaOut / energiaIn) * 100.0f;
+  }
+
+  // Usamos el nuevo algoritmo de compensación física
+  float mse = 0, snrIn = 0, snrOut = 0;
+
+  calcularMetricasAcusticas(senalLimpia, entradaTemporal, mse, snrIn);
+  calcularMetricasAcusticas(senalLimpia, salidaActiva, mse, snrOut);
+
+  float deltaSNR = snrOut - snrIn;
+
+  // Imprimir
+  Serial.print(" | E.Conservada=");
+  Serial.print(porcentajeEnergia, 1);
+  Serial.print("%");
+
+  Serial.print(" | MSE=");
+  Serial.print(mse, 1);
+
+  Serial.print(" | SNRin=");
+  Serial.print(snrIn, 1);
+
+  Serial.print(" | SNRout=");
+  Serial.print(snrOut, 1);
+
+  Serial.print(" | deltaSNR=");
+  Serial.print(deltaSNR, 1);
+  Serial.println("dB");
 
 
   // =========================================
@@ -1481,6 +1683,8 @@ void mostrarResultados(
   Serial.println(
     muestrasClipping
   );
+
+  muestrasClipping = 0;
 }
 
 
@@ -1515,11 +1719,9 @@ void setup() {
   // PWM
   // =========================================
 
-  ledcAttach(
-    PIN_PWM,
-    FRECUENCIA_PWM,
-    RESOLUCION_PWM
-  );
+if (!ledcAttach(PIN_PWM, FRECUENCIA_PWM, RESOLUCION_PWM)) {
+  Serial.println("ERROR: ledcAttach fallo");
+}
 
   ledcWrite(
     PIN_PWM,
@@ -1607,6 +1809,11 @@ void setup() {
   );
 
   Serial.println();
+
+  //for (int i = 0; i < N; i++) {
+   // senalLimpia[i] = 10000.0f * sin(2.0f * PI * 1000.0f * (float)i / FS);          ACÁ ES LA SEÑAL LIMPIA DE MI PRUEBA PERO CUANDO DEFINAN LAS PRUEBAS HAY QUE DEFINIR LA SEÑAL LIMPIA, YA QUE NOSOTROS DEFINIMOS LOS AUDIOS
+  //}
+
 }
 
 
@@ -1617,6 +1824,7 @@ void setup() {
 void loop() {
 
   static PaqueteAudio paquete;
+  enviarDiagnosticoPaso();
 
 
   // Revisar T / E
@@ -1707,6 +1915,8 @@ void loop() {
     unsigned long tiempoESP =
       micros()
       - inicioESP;
+      capturarDiagnostico(paquete.numeroBloque);
+
 
 
     // =========================================

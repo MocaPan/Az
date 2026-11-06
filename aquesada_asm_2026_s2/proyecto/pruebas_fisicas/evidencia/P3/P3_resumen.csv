@@ -1,0 +1,11 @@
+filtro,metrica,media,desviacion,unidad
+iir,energia_total_relativa_pct,49.4929,16.1383,%
+iir,energia_baja_relativa_pct,92.6441,5.9981,%
+iir,reduccion_energia_alta_db,49.2016,1.2899,dB
+iir,rms_entrada,247.4656,55.9277,ADC
+iir,rms_salida,176.7266,69.0307,ADC
+espectral,energia_total_relativa_pct,34.6426,16.0234,%
+espectral,energia_baja_relativa_pct,55.823,19.0796,%
+espectral,reduccion_energia_alta_db,9.8429,0.3351,dB
+espectral,rms_entrada,247.4656,55.9277,ADC
+espectral,rms_salida,148.104,68.2723,ADC

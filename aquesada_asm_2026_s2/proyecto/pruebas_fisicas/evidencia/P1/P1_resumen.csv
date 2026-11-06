@@ -1,0 +1,5 @@
+filtro,metrica,media_db,desviacion_db
+iir,atenuacion_1000hz_db,0.0181,0.0096
+iir,atenuacion_2500hz_db,56.7978,3.7247
+espectral,atenuacion_1000hz_db,0.9866,0.0305
+espectral,atenuacion_2500hz_db,16.7782,0.2526

@@ -1,0 +1,11 @@
+filtro,metrica,media_db,desviacion_db
+iir,atenuacion_ruido_db,51.0938,2.3366
+iir,delta_snr_espectral_db,51.084,2.3405
+iir,atenuacion_500hz_db,-0.0003,0.0444
+iir,atenuacion_900hz_db,0.1477,0.1047
+iir,atenuacion_1300hz_db,0.5923,0.2173
+espectral,atenuacion_ruido_db,10.2515,0.2718
+espectral,delta_snr_espectral_db,8.5279,0.6612
+espectral,atenuacion_500hz_db,0.9529,0.2215
+espectral,atenuacion_900hz_db,5.3276,0.1606
+espectral,atenuacion_1300hz_db,13.7144,1.2225
